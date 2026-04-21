@@ -1,63 +1,79 @@
-import json
+import os
+from dotenv import load_dotenv
+
+from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
+from langchain_community.vectorstores import FAISS
+from langchain_text_splitters import CharacterTextSplitter
+from langchain_community.document_loaders import TextLoader
+
+# Load env
+load_dotenv()
+
+# LLM
+llm = ChatGoogleGenerativeAI(model="gemini-pro", temperature=0)
 
 # Load knowledge base
-with open("knowledge.json", "r") as f:
-    knowledge = json.load(f)
+loader = TextLoader("knowledge.json")
+documents = loader.load()
 
-# Memory
+# Split text
+text_splitter = CharacterTextSplitter(chunk_size=300, chunk_overlap=50)
+docs = text_splitter.split_documents(documents)
+
+# Embeddings + Vector DB
+embeddings = GoogleGenerativeAIEmbeddings(model="text-embedding-gecko")
+vectorstore = FAISS.from_documents(docs, embeddings)
+
+retriever = vectorstore.as_retriever()
+
+# Memory (simple list to store conversation history)
 chat_history = []
+
+# RAG Chain using simple invocation
+def query_qa_chain(question):
+    docs = retriever.get_relevant_documents(question)
+    context = "\n".join([doc.page_content for doc in docs])
+    prompt = f"""Using the following context, answer the question.
+    
+Context:
+{context}
+
+Question: {question}
+
+Answer:"""
+    response = llm.invoke(prompt).content
+    return response
+
+# Lead storage
 lead_data = {"name": None, "email": None, "platform": None}
-lead_stage = 0  # 0 = not started, 1 = name, 2 = email, 3 = platform
+lead_stage = 0
 
-# Tool function
+# Tool
 def mock_lead_capture(name, email, platform):
-    print(f"\n✅ Lead captured successfully: {name}, {email}, {platform}\n")
+    print(f"\n Lead captured successfully: {name}, {email}, {platform}\n")
 
-# Intent Detection
+# Intent Detection using LLM
 def detect_intent(user_input):
-    text = user_input.lower()
+    prompt = f"""
+    Classify the intent of this message into one of:
+    - greeting
+    - pricing
+    - high_intent
+    - general
 
-    if any(word in text for word in ["hi", "hello", "hey"]):
-        return "greeting"
-    elif any(word in text for word in ["price", "pricing", "cost", "plan"]):
-        return "pricing"
-    elif any(word in text for word in ["buy", "subscribe", "start", "want", "try"]):
-        return "high_intent"
-    else:
-        return "general"
+    Message: {user_input}
 
-# RAG Retrieval
-def get_pricing_info():
-    basic = knowledge["pricing"]["basic"]
-    pro = knowledge["pricing"]["pro"]
+    Only return the intent label.
+    """
 
-    return f"""
-📦 Basic Plan:
-- Price: {basic['price']}
-- Features: {basic['features']}
+    response = llm.invoke(prompt).content.strip().lower()
+    return response
 
-🚀 Pro Plan:
-- Price: {pro['price']}
-- Features: {pro['features']}
-"""
-
-def get_policy_info():
-    refund = knowledge["policies"]["refund"]
-    support = knowledge["policies"]["support"]
-
-    return f"""
-📜 Policies:
-- Refund: {refund}
-- Support: {support}
-"""
-
-# Agent Response
-def agent_response(user_input):
+# Main Agent Logic
+def agent(user_input):
     global lead_stage, lead_data
 
-    intent = detect_intent(user_input)
-
-    # If already in lead capture flow
+    # If in lead collection
     if lead_stage > 0:
         if lead_stage == 1:
             lead_data["name"] = user_input
@@ -67,12 +83,11 @@ def agent_response(user_input):
         elif lead_stage == 2:
             lead_data["email"] = user_input
             lead_stage = 3
-            return "Awesome! Which platform do you create content on? (YouTube/Instagram/etc.)"
+            return "Awesome! Which platform do you create content on?"
 
         elif lead_stage == 3:
             lead_data["platform"] = user_input
 
-            # Call tool ONLY now
             mock_lead_capture(
                 lead_data["name"],
                 lead_data["email"],
@@ -82,34 +97,34 @@ def agent_response(user_input):
             lead_stage = 0
             return "🎉 You're all set! Our team will contact you soon."
 
-    # Normal flow
-    if intent == "greeting":
-        return "Hello! 👋 Welcome to AutoStream. How can I help you today?"
+    # Detect intent via LLM
+    intent = detect_intent(user_input)
 
-    elif intent == "pricing":
-        return get_pricing_info()
+    if "greeting" in intent:
+        return "Hello!  Welcome to AutoStream. How can I help you?"
 
-    elif intent == "high_intent":
+    elif "pricing" in intent:
+        result = query_qa_chain(user_input)
+        return result
+
+    elif "high_intent" in intent:
         lead_stage = 1
-        return "That's great to hear! 😊 Let's get you started. What's your name?"
+        return "That's great!  Let's get started. What's your name?"
 
     else:
-        return "I can help you with pricing, features, or getting started. What would you like to know?"
+        result = query_qa_chain(user_input)
+        return result
 
-# Run chatbot
-print("🤖 AutoStream AI Agent (type 'exit' to quit)\n")
+
+# Run loop
+print("🤖 AutoStream AI Agent (LangChain + RAG)\n")
 
 while True:
     user_input = input("You: ")
 
     if user_input.lower() == "exit":
-        print("Goodbye! 👋")
+        print("Goodbye! ")
         break
 
-    chat_history.append({"user": user_input})
-
-    response = agent_response(user_input)
-
-    chat_history.append({"bot": response})
-
+    response = agent(user_input)
     print("Bot:", response)
