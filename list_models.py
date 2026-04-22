@@ -1,0 +1,13 @@
+import os
+from dotenv import load_dotenv
+import google.generativeai as genai
+
+load_dotenv()
+api_key = os.getenv("GOOGLE_API_KEY")
+genai.configure(api_key=api_key)
+
+print("Available models:")
+for model in genai.list_models():
+    print(f"  - {model.name}")
+    if hasattr(model, 'supported_generation_methods'):
+        print(f"    Methods: {model.supported_generation_methods}")
