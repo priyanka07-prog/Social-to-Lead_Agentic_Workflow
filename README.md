@@ -75,4 +75,5 @@ A demo video is included showing:
 ## 🎥 Demo Video
 
 [Click here to watch demo]
+
 <video controls src="20260423-0835-48.5003012.mp4" title="Title"></video>
