@@ -15,10 +15,10 @@ except Exception as e:
     print(f"Import failed: {e}")
     exit(1)
 
-print("\nAttempting to initialize ChatGoogleGenerativeAI with gemini-1.5-pro...")
+print("\nAttempting to initialize ChatGoogleGenerativeAI with gemini-1.5-flash...")
 try:
     llm = ChatGoogleGenerativeAI(
-        model="gemini-1.5-pro",
+        model="gemini-1.5-flash",
         temperature=0,
         timeout=60,
         api_key=api_key
